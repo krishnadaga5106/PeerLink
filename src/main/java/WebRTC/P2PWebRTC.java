@@ -154,6 +154,7 @@ public class P2PWebRTC {
     }
 
     private void setupDataChannelObserver(RTCDataChannel dc) {
+
         dc.registerObserver(new RTCDataChannelObserver() {
             @Override
             public void onBufferedAmountChange(long prev) { }
