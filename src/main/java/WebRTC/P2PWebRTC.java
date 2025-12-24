@@ -45,68 +45,11 @@ public class P2PWebRTC {
             @Override
             public void onDataChannel(RTCDataChannel dc) {
 //                System.out.println("REMOTE DATA CHANNEL ARRIVED: " + dc.getLabel());
+
                 dataChannel = dc;  // override the reference
-                dc.registerObserver(new RTCDataChannelObserver() {
-                    @Override
-                    public void onBufferedAmountChange(long prev) { }
-
-                    @Override
-                    public void onStateChange() {
-                        System.out.println("DataChanne22222222222222222222222222l state: " + dc.getState());
-
-                        if (dc.getState() == RTCDataChannelState.OPEN) {
-                            System.out.println("DataChannel OPEN");
-                            listener.onDataChannel();
-                        }
-
-                    }
-
-                    //this is not being called TRY WHAT HAPPENS AFTER REMOVING IT
-                    @Override
-                    public void onMessage(RTCDataChannelBuffer buffer) {
-
-                        if (!buffer.binary) {
-                            byte[] bytes = new byte[buffer.data.remaining()];
-                            buffer.data.get(bytes);
-                            String msg = new String(bytes);
-                            System.out.println("[REMOTE upar] " + msg);
-                        }else {
-                            System.out.println(buffer.data.toString());
-                        }
-                    }
-                });
+                setupDataChannelObserver(dc);
             }
 
-        });
-
-        // CREATE A DATA CHANNEL — MANDATORY
-        RTCDataChannelInit init = new RTCDataChannelInit();
-        init.ordered = true;
-        dataChannel = connection.createDataChannel("chat", init);
-
-        dataChannel.registerObserver(new RTCDataChannelObserver() {
-            @Override
-            public void onBufferedAmountChange(long previousAmount) { }
-
-            @Override
-            public void onStateChange() {
-                System.out.println("DataChannel state: " + dataChannel.getState());
-                if(dataChannel.getState() == RTCDataChannelState.OPEN) {
-                    listener.onDataChannel();
-                }
-            }
-
-            @Override
-            public void onMessage(RTCDataChannelBuffer buffer) {
-                if (!buffer.binary) {
-                    byte[] bytes = new byte[buffer.data.remaining()];
-                    buffer.data.get(bytes);
-                    String msg = new String(bytes);
-                    System.out.println("[REMOTE] " + msg);
-                }else {
-                    System.out.println(buffer.data.toString());
-                }
-            }
         });
     }
 
@@ -119,6 +62,14 @@ public class P2PWebRTC {
     }
 
     public void createOffer(){
+        // CREATE A DATA CHANNEL — MANDATORY
+        RTCDataChannelInit init = new RTCDataChannelInit();
+        init.ordered = true;
+        this.dataChannel = connection.createDataChannel("chat", init);
+
+        setupDataChannelObserver(this.dataChannel);
+
+
         RTCOfferOptions options = new RTCOfferOptions();
 
         connection.createOffer(options, new CreateSessionDescriptionObserver() {
@@ -200,6 +151,35 @@ public class P2PWebRTC {
         RTCIceCandidate candidate = new RTCIceCandidate("0", 0, ice);
         connection.addIceCandidate(candidate);
 //        log.info("Added ICE Candidate: {}", candidate);
+    }
+
+    private void setupDataChannelObserver(RTCDataChannel dc) {
+        dc.registerObserver(new RTCDataChannelObserver() {
+            @Override
+            public void onBufferedAmountChange(long prev) { }
+
+            @Override
+            public void onStateChange() {
+                if (dc.getState() == RTCDataChannelState.OPEN) {
+                    System.out.println("DataChannel OPEN");
+                    listener.onDataChannel();
+                }else {
+                    System.out.println("DataChannel state: " + dc.getState());
+                }
+            }
+            @Override
+            public void onMessage(RTCDataChannelBuffer buffer) {
+                if (!buffer.binary) {
+                    byte[] bytes = new byte[buffer.data.remaining()];
+                    buffer.data.get(bytes);
+                    String msg = new String(bytes);
+                    System.out.println("\r[REMOTE] " + msg);
+                    System.out.print("Enter Message: ");
+                }else {
+                    System.out.println(buffer.data.toString());
+                }
+            }
+        });
     }
 
     public void sendMessage(String msg) throws Exception {
