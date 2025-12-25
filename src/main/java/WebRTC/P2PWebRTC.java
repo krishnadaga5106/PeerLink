@@ -1,6 +1,7 @@
 package WebRTC;
 
 import Interfaces.EventListener;
+import Interfaces.MessageHandler;
 import Models.*;
 import Signaling.SignalingClient;
 import dev.onvoid.webrtc.*;
@@ -14,11 +15,13 @@ import java.util.Scanner;
 public class P2PWebRTC {
 
     private String username;
-
+    private boolean isSender;
     private EventListener listener;
 
     @Setter
     private SignalingClient signalingClient;
+    @Setter
+    private MessageHandler messageHandler;
 
     private final String STUN_SERVER = "stun:stun.l.google.com:19302";
 
@@ -45,7 +48,6 @@ public class P2PWebRTC {
             @Override
             public void onDataChannel(RTCDataChannel dc) {
 //                System.out.println("REMOTE DATA CHANNEL ARRIVED: " + dc.getLabel());
-
                 dataChannel = dc;  // override the reference
                 setupDataChannelObserver(dc);
             }
@@ -170,15 +172,11 @@ public class P2PWebRTC {
             }
             @Override
             public void onMessage(RTCDataChannelBuffer buffer) {
-                if (!buffer.binary) {
-                    byte[] bytes = new byte[buffer.data.remaining()];
-                    buffer.data.get(bytes);
-                    String msg = new String(bytes);
-                    System.out.println("\r[REMOTE] " + msg);
-                    System.out.print("Enter Message: ");
-                }else {
-                    System.out.println(buffer.data.toString());
+                if (messageHandler == null) {
+                    log.error("No Message Handler provided");
+                    return;
                 }
+                messageHandler.handle(buffer);
             }
         });
     }
@@ -198,6 +196,19 @@ public class P2PWebRTC {
         dataChannel.send(buf);
     }
 
+    public void send(ByteBuffer buffer, boolean binary) throws Exception {
+        if(dataChannel == null) {
+            System.out.println("DataChannel not created");
+            return;
+        }
+        if (dataChannel.getState() != RTCDataChannelState.OPEN) {
+            System.out.println("DataChannel is not open yet");
+            return;
+        }
+        RTCDataChannelBuffer buf = new RTCDataChannelBuffer(buffer, binary);
+        dataChannel.send(buf);
+    }
+
     public void shutDown(){
         if(connection != null)
             connection.close();
@@ -206,7 +217,8 @@ public class P2PWebRTC {
         scanner.close();
     }
 
-    public P2PWebRTC(String username, EventListener listener) {
+    public P2PWebRTC(String username, EventListener listener, boolean isSender) {
+        this.isSender = isSender;
         this.username = username;
         this.listener = listener;
     }

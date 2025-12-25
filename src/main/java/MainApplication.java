@@ -1,10 +1,15 @@
+import FileTransfer.FileReceiver;
+import FileTransfer.FileSender;
+import FileTransfer.SenderMessageHandler;
 import Interfaces.EventListener;
 import Models.MessageType;
 import Models.SignalingMessage;
 import Signaling.SignalingClient;
 import WebRTC.P2PWebRTC;
+import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.lwjgl.system.windows.WindowProcI;
 
 import java.util.Scanner;
 import java.util.concurrent.CountDownLatch;
@@ -17,6 +22,8 @@ public class MainApplication implements EventListener {
     @Setter
     public static String roomCode;
     public static String username;
+    @Getter
+    public static boolean isSender;
 
     private static P2PWebRTC webRTC;
     private static SignalingClient signalingClient;
@@ -31,15 +38,6 @@ public class MainApplication implements EventListener {
         System.out.print("Enter username: ");
         username = scanner.nextLine();
 
-        webRTC = new P2PWebRTC(username, this);
-        signalingClient = new SignalingClient(this, webRTC);
-        webRTC.setSignalingClient(signalingClient);
-
-        signalingClient.connect();
-        webRTC.ini();
-
-        signalingClient.setUsername(username);
-
         String choice = "";
         while(!choice.equals("3")) {
             printMenu();
@@ -51,8 +49,7 @@ public class MainApplication implements EventListener {
                 case "2":
                     receiver();
                     break;
-                case "3":
-                    break;
+                case "3": break;
                 default:
                     log.error("Invalid choice");
             }
@@ -63,6 +60,17 @@ public class MainApplication implements EventListener {
         webRTC.shutDown();
     }
 
+    private void ini() throws Exception {
+        webRTC = new P2PWebRTC(username, this, isSender());
+        signalingClient = new SignalingClient(this, webRTC);
+        webRTC.setSignalingClient(signalingClient);
+
+        signalingClient.connect();
+        webRTC.ini();
+
+        signalingClient.setUsername(username);
+    }
+
     static void printMenu(){
         System.out.println("\n====== P2P WebRTC CLI ======");
         System.out.println("1) Create Offer (acts as offerer / often sender)");
@@ -71,7 +79,10 @@ public class MainApplication implements EventListener {
         System.out.print("Choice: ");
     }
 
-    private static void sender() throws Exception {
+    private void sender() throws Exception {
+        isSender = true;
+        ini();
+
         //send message to create room first
         SignalingMessage signalingMessage = new SignalingMessage(MessageType.CREATE);
         signalingClient.sendMessage(signalingMessage);
@@ -103,10 +114,20 @@ public class MainApplication implements EventListener {
         //try to close the web socket
         signalingClient.stop();
 
-        startChatting();
+        System.out.print("Start File sending(Y/N): ");
+        String choice = scanner.nextLine().trim();
+        if(choice.equals("N")) return;//TODO:handle later
+
+        startFileSending();
+        Thread.sleep(Long.MAX_VALUE);
+
+//        startChatting();
     }
 
-    private static void receiver() throws Exception {
+    private void receiver() throws Exception {
+        isSender = false;
+        ini();
+
         //get the room code first
         System.out.print("Enter the Room Code: ");
         roomCode = scanner.nextLine();
@@ -141,8 +162,25 @@ public class MainApplication implements EventListener {
         //try to close the web socket
         signalingClient.stop();
 
-        startChatting();
+        startFileReceiving();
 
+        Thread.sleep(Long.MAX_VALUE);
+//        startChatting();
+    }
+
+    private void startFileSending() throws Exception {
+        FileSender fileSender = new FileSender(webRTC);
+        SenderMessageHandler senderMessageHandler = new SenderMessageHandler(fileSender);
+        webRTC.setMessageHandler(senderMessageHandler);
+
+        fileSender.start();
+    }
+
+    private void startFileReceiving() throws Exception {
+        FileReceiver fileReceiver = new FileReceiver(webRTC);
+        webRTC.setMessageHandler(fileReceiver);
+        System.out.println("Waiting for sender to start sending files...");
+        fileReceiver.start();
     }
 
     private static void startChatting() throws Exception {
