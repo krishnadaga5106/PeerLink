@@ -5,6 +5,7 @@ import Interfaces.MessageHandler;
 import Models.*;
 import Signaling.SignalingClient;
 import dev.onvoid.webrtc.*;
+import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -27,6 +28,7 @@ public class P2PWebRTC {
 
     private PeerConnectionFactory factory;
     private RTCPeerConnection connection;
+    @Getter
     private RTCDataChannel dataChannel;
 
     private final Scanner scanner = new Scanner(System.in);
