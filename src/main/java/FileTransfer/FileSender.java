@@ -1,5 +1,6 @@
 package FileTransfer;
 
+import Interfaces.EventListener;
 import WebRTC.P2PWebRTC;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +16,7 @@ import java.util.concurrent.CountDownLatch;
 @RequiredArgsConstructor
 public class FileSender {
     private final P2PWebRTC webRTC;
+    private final EventListener listener;
     private CountDownLatch latch;
 
     private String ackMsg;
@@ -65,6 +67,7 @@ public class FileSender {
             sendFile(file);
         }
         log.info("Files sent successfully");
+        onComplete();
     }
 
     private void sendFile(File file) throws Exception {
@@ -96,7 +99,6 @@ public class FileSender {
         Thread.sleep(100);
     }
 
-
     private ArrayList<File> getFiles(){
         String paths = TinyFileDialogs.tinyfd_openFileDialog(
                 "Select Files",
@@ -124,4 +126,8 @@ public class FileSender {
         this.ackMsg = ackMsg;
     }
 
+    private void onComplete() throws Exception {
+        webRTC.send(ByteBuffer.wrap("COMPLETE".getBytes()), false);
+        listener.onFileTransferComplete();
+    }
 }

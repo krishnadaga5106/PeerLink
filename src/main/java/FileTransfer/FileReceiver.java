@@ -1,5 +1,6 @@
 package FileTransfer;
 
+import Interfaces.EventListener;
 import Interfaces.MessageHandler;
 import WebRTC.P2PWebRTC;
 import dev.onvoid.webrtc.RTCDataChannelBuffer;
@@ -19,7 +20,8 @@ import java.util.concurrent.CountDownLatch;
 @RequiredArgsConstructor
 public class FileReceiver implements MessageHandler {
     private final P2PWebRTC webRTC;
-    private final Scanner scanner;
+    private final EventListener listener;
+    private Scanner scanner;
     private CountDownLatch latch;
     private String dir;
 
@@ -29,7 +31,10 @@ public class FileReceiver implements MessageHandler {
     private boolean isReceivingFile;
 
     public void start() throws InterruptedException {
+        scanner = new Scanner(System.in);
         //waiting for the transfer req
+
+        System.out.println("Waiting for sender to start sending files...");
         latch = new CountDownLatch(1);
         latch.await();
     }
@@ -50,7 +55,6 @@ public class FileReceiver implements MessageHandler {
 
         byte[] data = new byte[buffer.data.remaining()];
         buffer.data.get(data);
-
         try{
             fos.write(data);
             totalBytesReceived += data.length;
@@ -61,11 +65,9 @@ public class FileReceiver implements MessageHandler {
                 isReceivingFile = false;
                 System.out.println("File Downloaded.");
             }
-
         }catch(IOException e){
             log.error(e.getMessage());
         }
-
     }
 
     void handleText(RTCDataChannelBuffer buffer) {
@@ -93,6 +95,8 @@ public class FileReceiver implements MessageHandler {
                     sendACK(false);
                 }
             }
+        }else if(msg.equals("COMPLETE")){
+            onComplete();
         }
     }
 
@@ -154,9 +158,7 @@ public class FileReceiver implements MessageHandler {
         }
     }
 
-    public FileReceiver(P2PWebRTC webRTC) {
-        this.webRTC = webRTC;
-        this.scanner = new Scanner(System.in);
+    private void onComplete(){
+        listener.onFileTransferComplete();
     }
-
 }

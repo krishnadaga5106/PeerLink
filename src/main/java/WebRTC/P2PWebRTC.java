@@ -15,10 +15,16 @@ import java.util.Scanner;
 @Slf4j
 public class P2PWebRTC {
 
+
+    // TODO: check if the peer is sender or receiver? if sender then on create Data Channel
+
+
+
     private String username;
-    private boolean isSender;
     private EventListener listener;
 
+    @Setter
+    private boolean isSender;
     @Setter
     private SignalingClient signalingClient;
     @Setter
@@ -49,7 +55,6 @@ public class P2PWebRTC {
 
             @Override
             public void onDataChannel(RTCDataChannel dc) {
-//                System.out.println("REMOTE DATA CHANNEL ARRIVED: " + dc.getLabel());
                 dataChannel = dc;  // override the reference
                 setupDataChannelObserver(dc);
             }
@@ -99,7 +104,7 @@ public class P2PWebRTC {
 
             @Override
             public void onFailure(String error) {
-                System.err.println("Failed to create offer: " + error);
+                log.error("Failed to create offer: {}", error);
             }
         });
     }
@@ -125,7 +130,7 @@ public class P2PWebRTC {
             }
             @Override
             public void onFailure(String error) {
-                System.err.println("Failed to create answer: " + error);
+                log.error("Failed to create answer: {}", error);
             }
         });
     }
@@ -166,10 +171,10 @@ public class P2PWebRTC {
             @Override
             public void onStateChange() {
                 if (dc.getState() == RTCDataChannelState.OPEN) {
-                    System.out.println("DataChannel OPEN");
+                    log.info("Data channel opened.");
                     listener.onDataChannel();
                 }else {
-                    System.out.println("DataChannel state: " + dc.getState());
+                    log.info("DataChannel state: {}", dc.getState());
                 }
             }
             @Override
@@ -183,28 +188,17 @@ public class P2PWebRTC {
         });
     }
 
-    public void sendMessage(String msg) throws Exception {
-        if (dataChannel == null) {
-            System.out.println("DataChannel not created");
-            return;
-        }
-        if (dataChannel.getState() != RTCDataChannelState.OPEN) {
-            System.out.println("DataChannel is not open yet");
-            return;
-        }
-
-        ByteBuffer buffer = ByteBuffer.wrap(msg.getBytes());
-        RTCDataChannelBuffer buf = new RTCDataChannelBuffer(buffer, false);
-        dataChannel.send(buf);
-    }
-
     public void send(ByteBuffer buffer, boolean binary) throws Exception {
         if(dataChannel == null) {
-            System.out.println("DataChannel not created");
+            log.error("DataChannel not created");
+            System.out.println("Something went wrong...");
+            System.exit(1);
             return;
         }
         if (dataChannel.getState() != RTCDataChannelState.OPEN) {
-            System.out.println("DataChannel is not open yet");
+            log.error("DataChannel is not open yet");
+            System.out.println("Something went wrong...");
+            System.exit(1);
             return;
         }
         RTCDataChannelBuffer buf = new RTCDataChannelBuffer(buffer, binary);
@@ -219,8 +213,7 @@ public class P2PWebRTC {
         scanner.close();
     }
 
-    public P2PWebRTC(String username, EventListener listener, boolean isSender) {
-        this.isSender = isSender;
+    public P2PWebRTC(String username, EventListener listener) {
         this.username = username;
         this.listener = listener;
     }

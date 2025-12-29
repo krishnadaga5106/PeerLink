@@ -18,7 +18,7 @@ public class SignalingClient {
 
     private final EventListener listener;
 
-    private String url = "ws://localhost:8080/ws";
+    private final String url = "ws://localhost:8080/ws";
     private WebSocketClient client;
     private SignalingSocket socket;
     private P2PWebRTC webRTC;
@@ -49,28 +49,38 @@ public class SignalingClient {
 
         switch (signalingResponse.getResponseType()){
             case INFO -> log.info(signalingResponse.getMessage());
-            case ERROR -> log.error(signalingResponse.getMessage());
+            case ERROR -> onError(signalingResponse);
             case PEER_JOIN -> listener.onPeerJoined();
-            case OFFER -> handleOffer(signalingResponse);
-            case ANSWER -> handleAnswer(signalingResponse);
+            case OFFER -> onOffer(signalingResponse);
+            case ANSWER -> onAnswer(signalingResponse);
             case ICE -> webRTC.handle(signalingResponse);
-            case JOINED -> joinRoom(signalingResponse.getMessage());
+            case JOINED -> joinRoom(signalingResponse);
+            case ROLE -> onRole(signalingResponse);
         }
     }
 
-    private void handleAnswer(SignalingResponse signalingResponse) {
+    private void onRole(SignalingResponse signalingResponse) {
+        listener.onRole(signalingResponse.getMessage());
+    }
+
+    private void onAnswer(SignalingResponse signalingResponse) {
         webRTC.handle(signalingResponse);
         listener.onAnswer();
     }
 
-    private void handleOffer(SignalingResponse signalingResponse) {
+    private void onOffer(SignalingResponse signalingResponse) {
         webRTC.handle(signalingResponse);
         listener.onOffer();
     }
 
-    private void joinRoom(String message) {
-        setRoomCode(message);
-        listener.onRoomJoined(message);
+    private void joinRoom(SignalingResponse signalingResponse) {
+        setRoomCode(signalingResponse.getMessage());
+        listener.onRoomJoined(signalingResponse.getMessage());
+    }
+
+    private void onError(SignalingResponse signalingResponse) {
+        log.error(signalingResponse.getMessage());
+        listener.onError(signalingResponse.getMessage());
     }
 
     public void sendMessage(SignalingMessage signalingMessage) {

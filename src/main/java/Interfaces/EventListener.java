@@ -1,5 +1,7 @@
 package Interfaces;
 
+import Models.SignalingResponse;
+
 public interface EventListener {
 
     //sender-get the roomCode setup
@@ -17,5 +19,11 @@ public interface EventListener {
 
     //for logging and state info
     void onOffer();
+
+    void onError(String error);
+
+    void onRole(String message);
+
+    void onFileTransferComplete();
 
 }

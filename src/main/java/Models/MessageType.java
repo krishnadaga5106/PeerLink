@@ -8,6 +8,8 @@ public enum MessageType {
     ANSWER,
     ICE,
 
+    ROLE,
+
     INFO,
     ERROR
 }

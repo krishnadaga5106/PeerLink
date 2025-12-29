@@ -4,6 +4,7 @@ import FileTransfer.SenderMessageHandler;
 import Interfaces.EventListener;
 import Models.MessageType;
 import Models.SignalingMessage;
+import Models.SignalingResponse;
 import Signaling.SignalingClient;
 import WebRTC.P2PWebRTC;
 import lombok.Getter;
@@ -19,10 +20,11 @@ public class MainApplication implements EventListener {
     static Scanner scanner = new Scanner(System.in);
 
     @Setter
-    public static String roomCode;
-    public static String username;
+    private static String roomCode;
+    private static String username;
     @Getter
-    public static boolean isSender;
+    private static boolean isSender;
+    private static boolean isOtherPeerSender;
 
     private static P2PWebRTC webRTC;
     private static SignalingClient signalingClient;
@@ -43,12 +45,14 @@ public class MainApplication implements EventListener {
             choice = scanner.nextLine().trim();
             switch(choice){
                 case "1":
-                    sender();
+                    creator();
                     break;
                 case "2":
-                    receiver();
+                    joiner();
                     break;
-                case "3": break;
+                case "3":
+                    System.out.println("Exiting...");
+                    break;
                 default:
                     log.error("Invalid choice");
             }
@@ -59,8 +63,9 @@ public class MainApplication implements EventListener {
         webRTC.shutDown();
     }
 
+    //to be checked
     private void ini() throws Exception {
-        webRTC = new P2PWebRTC(username, this, isSender());
+        webRTC = new P2PWebRTC(username, this);
         signalingClient = new SignalingClient(this, webRTC);
         webRTC.setSignalingClient(signalingClient);
 
@@ -72,14 +77,13 @@ public class MainApplication implements EventListener {
 
     static void printMenu(){
         System.out.println("\n====== P2P WebRTC CLI ======");
-        System.out.println("1) Create Offer (acts as offerer / often sender)");
-        System.out.println("2) Create Answer (acts as answerer / often receiver)");
-        System.out.println("3) Quit");
+        System.out.println("1) Create Room   (1)");
+        System.out.println("2) Join Room     (2)");
+        System.out.println("3) Quit          (3)");
         System.out.print("Choice: ");
     }
 
-    private void sender() throws Exception {
-        isSender = true;
+    private void creator() throws Exception {
         ini();
 
         //send message to create room first
@@ -90,12 +94,84 @@ public class MainApplication implements EventListener {
         countDownLatch = new CountDownLatch(1);
         countDownLatch.await();
         log.info("{} Room joined", username);
+        System.out.println("Your Room Code: " + roomCode);
 
         //reset
         //wait for peer to join then create offer
         countDownLatch = new CountDownLatch(1);
         countDownLatch.await();
         log.info("Peer Joined");//tryna get the peer name
+
+        //negotiate roles at the start
+        negotiateRole();
+
+        //THIS IS THE POINT WHERE WE NEED TO CHECK IF WE ARE SENDER OR
+        //RECEIVER TO SEND OFFER OR WAIT FOR OFFER
+
+        if(isSender)
+            sender();
+        else
+            receiver();
+    }
+
+    private void joiner() throws Exception {
+        ini();
+
+        getRoomCode();
+        //wait for user to join room
+        countDownLatch = new CountDownLatch(1);
+        countDownLatch.await();
+        log.info("{} Room joined", username);
+
+        //negotiate roles at the start after joining the room
+        negotiateRole();
+
+        if (isSender)
+            sender();
+        else
+            receiver();
+    }
+
+    private void negotiateRole() throws Exception {
+        senderOrReceiver();
+        signalingClient.sendMessage
+                (new SignalingMessage(MessageType.ROLE, String.valueOf(isSender)));
+
+        System.out.println("Waiting for other peer to choose...");
+        //wait for other peers message
+        countDownLatch = new CountDownLatch(1);
+        countDownLatch.await();
+
+        while(isSender == isOtherPeerSender){
+            System.out.println("Both selected the same choice!!");
+            senderOrReceiver();
+            signalingClient.sendMessage
+                    (new SignalingMessage(MessageType.ROLE, String.valueOf(isSender)));
+
+            System.out.println("Waiting for other peer to choose...");
+            //wait for other peers message
+            countDownLatch = new CountDownLatch(1);
+            countDownLatch.await();
+        }
+        webRTC.setSender(isSender);
+    }
+
+    private void senderOrReceiver(){
+        String choice = "";
+        while(!choice.equals("1") && !choice.equals("2")){
+            System.out.println("Do you want to:");
+            System.out.println("1) Send a File      (1)");
+            System.out.println("2) Receive a File   (2)");
+            System.out.print("Choice: ");
+            choice = scanner.nextLine().trim();
+            if(!choice.equals("1") && !choice.equals("2")){
+                System.out.println("Invalid choice");
+            }
+        }
+        isSender = choice.equals("1");
+    }
+
+    private void sender() throws Exception {
         webRTC.createOffer();
 
         //reset
@@ -104,47 +180,33 @@ public class MainApplication implements EventListener {
         countDownLatch.await();
         log.info("Received answer from peer");
 
+
         //reset
         //wait for DC
         countDownLatch = new CountDownLatch(1);
         countDownLatch.await();
-        log.info("DataChannel Ready, Closing the web socket connection");
+        log.info("DataChannel Ready.");
 
-        //try to close the web socket
+        //stop the web socket
+        log.info("Closing the Web Socket");
         signalingClient.stop();
 
+        //start sending files
         System.out.print("Start File sending(Y/N): ");
         String choice = scanner.nextLine().trim();
         if(choice.equals("N")) return;//TODO:handle later
 
         startFileSending();
-        Thread.sleep(Long.MAX_VALUE);
 
-//        startChatting();
+        //wait for the file transfer to be completed
+        countDownLatch = new CountDownLatch(1);
+        countDownLatch.await();
+
+        System.out.println("File transfer Done, Ending the Session");
+        webRTC.shutDown();
     }
 
     private void receiver() throws Exception {
-        isSender = false;
-        ini();
-
-        //get the room code first
-        System.out.print("Enter the Room Code: ");
-        roomCode = scanner.nextLine();
-
-
-        //set the roomCode
-        signalingClient.setRoomCode(roomCode);
-        //TODO: HANDLE ERROR IF ROOM CODE IS INVALID
-
-        //try to join the room with the room code
-        SignalingMessage signalingMessage = new SignalingMessage(MessageType.JOIN);
-        signalingClient.sendMessage(signalingMessage);
-
-        //wait for user to join room
-        countDownLatch = new CountDownLatch(1);
-        countDownLatch.await();
-        log.info("{} Room joined", username);
-
         //reset
         //wait for offer
         countDownLatch = new CountDownLatch(1);
@@ -152,23 +214,30 @@ public class MainApplication implements EventListener {
         log.info("Received offer from peer");
         webRTC.createAnswer();
 
+
         //reset
         //wait for DC
         countDownLatch = new CountDownLatch(1);
         countDownLatch.await();
         log.info("DataChannel Ready, Closing the web socket connection");
 
-        //try to close the web socket
+        //stop the web socket
+        log.info("Closing the Web Socket");
         signalingClient.stop();
 
+        //start receiving files
         startFileReceiving();
 
-        Thread.sleep(Long.MAX_VALUE);
-//        startChatting();
+        //wait for the file transfer to be completed
+        countDownLatch = new CountDownLatch(1);
+        countDownLatch.await();
+
+        System.out.println("File transfer Done, Ending the Session");
+        webRTC.shutDown();
     }
 
     private void startFileSending() throws Exception {
-        FileSender fileSender = new FileSender(webRTC);
+        FileSender fileSender = new FileSender(webRTC, this);
         SenderMessageHandler senderMessageHandler = new SenderMessageHandler(fileSender);
         webRTC.setMessageHandler(senderMessageHandler);
 
@@ -176,19 +245,24 @@ public class MainApplication implements EventListener {
     }
 
     private void startFileReceiving() throws Exception {
-        FileReceiver fileReceiver = new FileReceiver(webRTC);
+        FileReceiver fileReceiver = new FileReceiver(webRTC, this);
         webRTC.setMessageHandler(fileReceiver);
-        System.out.println("Waiting for sender to start sending files...");
+
         fileReceiver.start();
     }
 
-    private static void startChatting() throws Exception {
-        String choice = "";
-        while(!choice.equals("exit")) {
-            System.out.print("Enter Message: ");
-            choice = scanner.nextLine().trim();
-            webRTC.sendMessage(choice);
-        }
+    private void getRoomCode(){
+        //get the room code
+        System.out.print("Enter the Room Code: ");
+        roomCode = scanner.nextLine();
+
+        //set the roomCode
+        signalingClient.setRoomCode(roomCode);
+
+        //try to join the room with the room code
+        SignalingMessage signalingMessage = new SignalingMessage(MessageType.JOIN);
+        signalingClient.sendMessage(signalingMessage);
+
     }
 
     @Override
@@ -222,5 +296,41 @@ public class MainApplication implements EventListener {
     public void onDataChannel() {
         if(countDownLatch != null)
             countDownLatch.countDown();
+    }
+
+    @Override
+    public void onError(String error) {
+        if(error.equalsIgnoreCase("Room does not exists")){
+            System.out.println("\nERROR: Room does not exists");
+            getRoomCode();
+        }else if(error.equalsIgnoreCase("Room is Full")){
+            System.out.println("\nERROR: Room is Full");
+            getRoomCode();
+        }
+    }
+
+    @Override
+    public void onRole(String message){
+        //will be true if the other peer is also trying to be sender
+        isOtherPeerSender = Boolean.parseBoolean(message);
+
+        while(countDownLatch.getCount() == 0){
+            try {
+                Thread.sleep(5);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        countDownLatch.countDown();
+    }
+
+    @Override
+    public void onFileTransferComplete(){
+//        if(countDownLatch != null)
+//            countDownLatch.countDown();
+        while(countDownLatch.getCount() == 0){
+            System.out.println("counting");
+        }
+        countDownLatch.countDown();
     }
 }
