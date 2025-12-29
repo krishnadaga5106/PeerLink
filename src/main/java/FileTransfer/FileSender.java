@@ -128,6 +128,5 @@ public class FileSender {
 
     private void onComplete() throws Exception {
         webRTC.send(ByteBuffer.wrap("COMPLETE".getBytes()), false);
-        listener.onFileTransferComplete();
     }
 }

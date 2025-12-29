@@ -95,7 +95,9 @@ public class SignalingClient {
     }
 
     public void stop() throws Exception {
-        client.stop();
+        if(client != null) {
+            client.stop();
+        }
     }
 
 }

@@ -206,11 +206,14 @@ public class P2PWebRTC {
     }
 
     public void shutDown(){
-        if(connection != null)
+        if(connection != null) {
             connection.close();
-        if(factory != null)
+            connection = null;
+        }
+        if(factory != null) {
             factory.dispose();
-        scanner.close();
+            factory = null;
+        }
     }
 
     public P2PWebRTC(String username, EventListener listener) {

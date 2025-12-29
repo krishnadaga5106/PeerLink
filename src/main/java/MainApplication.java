@@ -4,7 +4,6 @@ import FileTransfer.SenderMessageHandler;
 import Interfaces.EventListener;
 import Models.MessageType;
 import Models.SignalingMessage;
-import Models.SignalingResponse;
 import Signaling.SignalingClient;
 import WebRTC.P2PWebRTC;
 import lombok.Getter;
@@ -54,7 +53,7 @@ public class MainApplication implements EventListener {
                     System.out.println("Exiting...");
                     break;
                 default:
-                    log.error("Invalid choice");
+                    System.out.println("Invalid choice!!");
             }
         }
 
@@ -95,6 +94,8 @@ public class MainApplication implements EventListener {
         countDownLatch.await();
         log.info("{} Room joined", username);
         System.out.println("Your Room Code: " + roomCode);
+        System.out.println("Share this room code with other peer to let them join!");
+        System.out.println("Waiting for other peer to join...");
 
         //reset
         //wait for peer to join then create offer
@@ -125,6 +126,9 @@ public class MainApplication implements EventListener {
 
         //negotiate roles at the start after joining the room
         negotiateRole();
+
+        //THIS IS THE POINT WHERE WE NEED TO CHECK IF WE ARE SENDER OR
+        //RECEIVER TO SEND OFFER OR WAIT FOR OFFER
 
         if (isSender)
             sender();
@@ -197,12 +201,8 @@ public class MainApplication implements EventListener {
         if(choice.equals("N")) return;//TODO:handle later
 
         startFileSending();
-
-        //wait for the file transfer to be completed
-        countDownLatch = new CountDownLatch(1);
-        countDownLatch.await();
-
-        System.out.println("File transfer Done, Ending the Session");
+        //no latch as the control will return after complete transfer
+        System.out.println("File transfer Done, Ending current Session");
         webRTC.shutDown();
     }
 
@@ -232,7 +232,7 @@ public class MainApplication implements EventListener {
         countDownLatch = new CountDownLatch(1);
         countDownLatch.await();
 
-        System.out.println("File transfer Done, Ending the Session");
+        System.out.println("File transfer Done, Ending current Session");
         webRTC.shutDown();
     }
 
