@@ -1,0 +1,28 @@
+package Core;
+
+public enum AppState {
+    INIT,
+    CONNECTING_TO_SERVER,
+
+    JOINING_ROOM,
+
+    //CREATOR
+    WAITING_FOR_PEER,
+    WAITING_FOR_ANSWER,
+
+    //JOINER
+    WAITING_FOR_OFFER,
+    WAITING_FOR_DC,
+
+    CHATTING,
+
+    //RECEIVER
+    WAITING_FOR_FILES,
+    REVIEWING_FILES,
+    GETTING_DIR,
+
+    //SENDER
+    WAITING_FOR_ACK,
+
+    TRANSFERRING
+}

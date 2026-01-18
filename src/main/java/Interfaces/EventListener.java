@@ -1,7 +1,5 @@
 package Interfaces;
 
-import Models.SignalingResponse;
-
 public interface EventListener {
 
     //sender-get the roomCode setup
@@ -22,8 +20,12 @@ public interface EventListener {
 
     void onError(String error);
 
-    void onRole(String message);
-
     void onFileTransferComplete();
 
+    void peerLeft();
+
+    //to change the app state to reviewing and get the user input
+    void onReviewing();
+
+    void onGettingDir();
 }

@@ -55,13 +55,9 @@ public class SignalingClient {
             case ANSWER -> onAnswer(signalingResponse);
             case ICE -> webRTC.handle(signalingResponse);
             case JOINED -> joinRoom(signalingResponse);
-            case ROLE -> onRole(signalingResponse);
         }
     }
 
-    private void onRole(SignalingResponse signalingResponse) {
-        listener.onRole(signalingResponse.getMessage());
-    }
 
     private void onAnswer(SignalingResponse signalingResponse) {
         webRTC.handle(signalingResponse);

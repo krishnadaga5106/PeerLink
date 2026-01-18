@@ -1,34 +1,28 @@
 package WebRTC;
 
 import Interfaces.EventListener;
-import Interfaces.MessageHandler;
+import Core.MessageHandler;
 import Models.*;
 import Signaling.SignalingClient;
 import dev.onvoid.webrtc.*;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.ByteBuffer;
-import java.util.Scanner;
 
 @Slf4j
+@RequiredArgsConstructor
 public class P2PWebRTC {
 
 
     // TODO: check if the peer is sender or receiver? if sender then on create Data Channel
 
-
-
-    private String username;
-    private EventListener listener;
-
-    @Setter
-    private boolean isSender;
+    private final EventListener listener;
     @Setter
     private SignalingClient signalingClient;
-    @Setter
-    private MessageHandler messageHandler;
+    private final MessageHandler messageHandler;
 
     private final String STUN_SERVER = "stun:stun.l.google.com:19302";
 
@@ -36,8 +30,6 @@ public class P2PWebRTC {
     private RTCPeerConnection connection;
     @Getter
     private RTCDataChannel dataChannel;
-
-    private final Scanner scanner = new Scanner(System.in);
 
     public void ini(){
         factory = new PeerConnectionFactory();
@@ -173,16 +165,12 @@ public class P2PWebRTC {
                 if (dc.getState() == RTCDataChannelState.OPEN) {
                     log.info("Data channel opened.");
                     listener.onDataChannel();
-                }else {
-                    log.info("DataChannel state: {}", dc.getState());
+                }else if(dc.getState() == RTCDataChannelState.CLOSED){
+                    listener.peerLeft();
                 }
             }
             @Override
             public void onMessage(RTCDataChannelBuffer buffer) {
-                if (messageHandler == null) {
-                    log.error("No Message Handler provided");
-                    return;
-                }
                 messageHandler.handle(buffer);
             }
         });
@@ -191,13 +179,13 @@ public class P2PWebRTC {
     public void send(ByteBuffer buffer, boolean binary) throws Exception {
         if(dataChannel == null) {
             log.error("DataChannel not created");
-            System.out.println("Something went wrong...");
+            System.out.println("[SYSTEM]: Something went wrong...");
             System.exit(1);
             return;
         }
         if (dataChannel.getState() != RTCDataChannelState.OPEN) {
             log.error("DataChannel is not open yet");
-            System.out.println("Something went wrong...");
+            System.out.println("[SYSTEM]: Something went wrong...");
             System.exit(1);
             return;
         }
@@ -214,11 +202,6 @@ public class P2PWebRTC {
             factory.dispose();
             factory = null;
         }
-    }
-
-    public P2PWebRTC(String username, EventListener listener) {
-        this.username = username;
-        this.listener = listener;
     }
 
 }
