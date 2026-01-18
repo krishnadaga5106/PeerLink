@@ -37,7 +37,7 @@ public class MainApplication {
         MessageHandler messageHandler = new MessageHandler(controller);
         controller.setMessageHandler(messageHandler);
 
-        webRTC = new P2PWebRTC(username, controller, messageHandler);
+        webRTC = new P2PWebRTC(controller, messageHandler);
         signalingClient = new SignalingClient(controller, webRTC);
 
 
