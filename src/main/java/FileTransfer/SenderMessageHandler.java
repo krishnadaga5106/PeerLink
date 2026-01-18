@@ -17,6 +17,17 @@ public class SenderMessageHandler implements DataHandler {
 
     @Override
     public void handleText(String msg) {
-        fileSender.onACK(msg);
+        if(msg.startsWith("FILE_START")){
+            fileSender.onFileStart(msg);
+        }
+        else if (msg.equals("FILE_PAUSE")) {
+            fileSender.pause(false);
+        }
+        else if (msg.equals("FILE_RESUME")) {
+            fileSender.resume(false);
+        }
+        else{
+            fileSender.onACK(msg);
+        }
     }
 }

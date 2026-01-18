@@ -63,14 +63,11 @@ public class P2PWebRTC {
     }
 
     public void createOffer(){
-        // CREATE A DATA CHANNEL — MANDATORY
         RTCDataChannelInit init = new RTCDataChannelInit();
         init.ordered = true;
-        this.dataChannel = connection.createDataChannel("chat", init);
+        this.dataChannel = connection.createDataChannel("channel", init);
 
         setupDataChannelObserver(this.dataChannel);
-
-
         RTCOfferOptions options = new RTCOfferOptions();
 
         connection.createOffer(options, new CreateSessionDescriptionObserver() {
@@ -178,15 +175,14 @@ public class P2PWebRTC {
 
     public void send(ByteBuffer buffer, boolean binary) throws Exception {
         if(dataChannel == null) {
-            log.error("DataChannel not created");
-            System.out.println("[SYSTEM]: Something went wrong...");
+            log.error("DataChannel not created yet.");
+            System.out.println("\r[SYSTEM]: Something went wrong...");
             System.exit(1);
             return;
         }
         if (dataChannel.getState() != RTCDataChannelState.OPEN) {
-            log.error("DataChannel is not open yet");
-            System.out.println("[SYSTEM]: Something went wrong...");
-            System.exit(1);
+            //peer was once connected and is not now
+            log.error("DataChannel is not open.");
             return;
         }
         RTCDataChannelBuffer buf = new RTCDataChannelBuffer(buffer, binary);
@@ -203,5 +199,4 @@ public class P2PWebRTC {
             factory = null;
         }
     }
-
 }

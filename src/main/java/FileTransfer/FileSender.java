@@ -1,25 +1,31 @@
 package FileTransfer;
 
 import Interfaces.EventListener;
+import Interfaces.FileTransfer;
 import WebRTC.P2PWebRTC;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.lwjgl.util.tinyfd.TinyFileDialogs;
 
 import java.io.File;
-import java.io.FileInputStream;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
 
 @Slf4j
 @RequiredArgsConstructor
-public class FileSender {
+public class FileSender implements FileTransfer {
+    private final int CHUNK_SIZE = 16 * 1024;
     private final P2PWebRTC webRTC;
     private final EventListener listener;
     private CountDownLatch latch;
+    private CountDownLatch pauseLatch = new CountDownLatch(0);
+    private boolean selfOriginatedPause;
+    private boolean isPaused = false;
 
     private String ackMsg;
+    private long fileStarPos;
 
     public void start() throws Exception {
         /*
@@ -32,7 +38,12 @@ public class FileSender {
         //Step-1
         //get the List of selected files
         ArrayList<File> files = getFiles();
-        //if files is null reprompt and try to get files or EXIT
+        //if files are null, reprompt and try to get files or EXIT
+        if(files == null){
+            write("No files selected, exiting...");
+            onComplete(false);
+            return;
+        }
 
         //FOR NOW JUST TO MAKE IT SIMPLER, GET ACK REGARDING THE WHOLE TRANSFER CONTENT, not ACK for individual file
         //TODO: get ACK for individual file
@@ -44,7 +55,7 @@ public class FileSender {
         }
         //convert to KB
         double sizeInKB = (double) sizeInBytes / 1024;
-        String META_DATA = "REQ::" + fileNames + "::" + sizeInKB;
+        String META_DATA = "FILE_REQ::" + fileNames + "::" + sizeInKB;
         ByteBuffer buffer = ByteBuffer.wrap(META_DATA.getBytes());
 
         //send transfer Req
@@ -57,6 +68,7 @@ public class FileSender {
 
         if(ackMsg.startsWith("NACK")){
             write("Received Negative Acknowledgment");
+            onComplete(false);
             return;
         }
         write("Starting file transfer.");
@@ -67,21 +79,35 @@ public class FileSender {
             sendFile(file);
         }
         log.info("Files sent successfully");
-        onComplete();
+        onComplete(true);
     }
 
     private void sendFile(File file) throws Exception {
         //send the file starting header
         String header = "FILE_START::" + file.getName() + "::" + file.length();
         webRTC.send(ByteBuffer.wrap(header.getBytes()), false);
+
+        //wait for the response of the receiver, then send from the specified position of the file.
+        latch = new CountDownLatch(1);
+        latch.await();
+
+        //means that the receiver already has the file, Skip this file
+        if(fileStarPos == -1) return;
+
         //little wait for the receiver to prepare for transfer
         Thread.sleep(50);
-        try(FileInputStream fis = new FileInputStream(file)){
+        try(RandomAccessFile fis = new RandomAccessFile(file, "r")){
+            //seek to the length told by receiver
+            fis.seek(fileStarPos);
 
-            byte[] chunk = new byte[16 * 1024];
+            byte[] chunk = new byte[CHUNK_SIZE];
             //no of bytes read, will tell about the end of file
             int bytesRead;
             while((bytesRead = fis.read(chunk)) != -1){
+
+                //is the app paused?
+                if(pauseLatch.getCount() > 0) pauseLatch.await();
+
                 //if the buffered amount is > then 64KB wait for the buffer to clear
                 while(webRTC.getDataChannel().getBufferedAmount() > 64 * 1024){
                     Thread.sleep(5);
@@ -96,7 +122,7 @@ public class FileSender {
             }
         }
         //small pause between the files so that receiver does not overwhelms and is able to process the files
-        Thread.sleep(50);
+        Thread.sleep(5);
     }
 
     private ArrayList<File> getFiles(){
@@ -123,8 +149,16 @@ public class FileSender {
     }
 
     public void onACK(String ackMsg){
-        latch.countDown();
         this.ackMsg = ackMsg;
+        latch.countDown();
+    }
+
+    public void onFileStart(String msg){
+        //start pos -1 then skip file
+        String[] parts = msg.split("::");
+        //FILE_START::FileName::StartPos
+        fileStarPos = Long.parseLong(parts[2]);
+        latch.countDown();
     }
 
     private void write(String string){
@@ -132,8 +166,60 @@ public class FileSender {
         System.out.print("\r> ");
     }
     
-    private void onComplete() throws Exception {
-        webRTC.send(ByteBuffer.wrap("COMPLETE".getBytes()), false);
-        listener.onFileTransferComplete();
+    private void onComplete(boolean successful) throws Exception {
+        webRTC.send(ByteBuffer.wrap("FILE_COMPLETE".getBytes()), false);
+        listener.onFileTransferComplete(successful);
+    }
+
+    @Override
+    public void pause(boolean selfOriginated) {
+        if(isPaused) {
+            write("File transfer already paused.");
+            return;
+        }
+        try {
+            if (selfOriginated)
+                webRTC.send(ByteBuffer.wrap("FILE_PAUSE".getBytes()), false);
+        }
+        catch (Exception e){
+            log.error(e.getMessage());
+        }
+        finally {
+            if(!selfOriginated)
+                write("File transfer paused by other peer.");
+            selfOriginatedPause = selfOriginated;
+            isPaused = true;
+            listener.onPause(true);
+            pauseLatch = new CountDownLatch(1);
+        }
+    }
+
+    @Override
+    public void resume(boolean selfOriginated) {
+        if(!isPaused){
+            write("File transfer not paused.");
+            return;
+        }
+        try {
+            if (selfOriginated && selfOriginatedPause) {
+                isPaused = false;
+                listener.onPause(false);
+                pauseLatch.countDown();
+                webRTC.send(ByteBuffer.wrap("FILE_RESUME".getBytes()), false);
+            }
+            else if (selfOriginated && !selfOriginatedPause)
+                write("Cannot resume file transfer, other peer paused it.");
+        }
+        catch (Exception e){
+            log.error(e.getMessage());
+        }
+        finally {
+            if (!selfOriginated) {
+                write("File transfer resumed by other peer.");
+                isPaused = false;
+                listener.onPause(false);
+                pauseLatch.countDown();
+            }
+        }
     }
 }

@@ -1,5 +1,7 @@
 package Interfaces;
 
+import Core.AppState;
+
 public interface EventListener {
 
     //sender-get the roomCode setup
@@ -20,7 +22,7 @@ public interface EventListener {
 
     void onError(String error);
 
-    void onFileTransferComplete();
+    void onFileTransferComplete(boolean success);
 
     void peerLeft();
 
@@ -28,4 +30,8 @@ public interface EventListener {
     void onReviewing();
 
     void onGettingDir();
+
+    void onPause(boolean pause);
+
+    void setAppState(AppState appState);
 }

@@ -1,23 +1,23 @@
 package FileTransfer;
 
+import Core.AppState;
 import Interfaces.EventListener;
 import Interfaces.DataHandler;
+import Interfaces.FileTransfer;
 import WebRTC.P2PWebRTC;
 import dev.onvoid.webrtc.RTCDataChannelBuffer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.lwjgl.util.tinyfd.TinyFileDialogs;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.nio.ByteBuffer;
-import java.util.Scanner;
 
 @Slf4j
 @RequiredArgsConstructor
-public class FileReceiver implements DataHandler {
+public class FileReceiver implements DataHandler, FileTransfer {
+    private final int CHUNK_SIZE = 16 * 1024;
+    
     private final P2PWebRTC webRTC;
     private final EventListener listener;
 
@@ -25,15 +25,11 @@ public class FileReceiver implements DataHandler {
 
     private long currentFileSize;
     private long totalBytesReceived;
-    private FileOutputStream fos;
+    private String fileName;
+    private RandomAccessFile fos;
     private boolean isReceivingFile;
-
-    public void start() {
-//        write("\033[H\033[2J");
-        //waiting for the transfer req
-        write("Waiting for sender to start sending files...");
-    }
-
+    private boolean isPaused = false;
+    private boolean selfOriginatedPause;
 
     @Override
     public void handleBin(RTCDataChannelBuffer buffer) {
@@ -51,10 +47,12 @@ public class FileReceiver implements DataHandler {
             //check if the file is completed
             if (totalBytesReceived >= currentFileSize) {
                 fos.close();
+                renameFile();
                 isReceivingFile = false;
                 write("File Downloaded.");
             }
-        }catch(IOException e){
+        }
+        catch(IOException e){
             log.error(e.getMessage());
         }
     }
@@ -62,18 +60,25 @@ public class FileReceiver implements DataHandler {
     @Override
     public void handleText(String msg) {
         //prompt the user about the send req
-
         if(msg.startsWith("FILE_START")){
             try {
                 prepareForTransfer(msg);
             } catch (FileNotFoundException e) {
                 throw new RuntimeException(e);
             }
-        }else if(msg.startsWith("REQ")){
+        }
+        else if(msg.startsWith("FILE_REQ")){
             confirmFiles(msg);
             //then wait for the user ack, then proceed from the userAccept method
-        }else if(msg.equals("COMPLETE")){
+        }
+        else if(msg.equals("FILE_COMPLETE")){
             onComplete();
+        }
+        else if (msg.equals("FILE_PAUSE")) {
+            pause(false);
+        }
+        else if (msg.equals("FILE_RESUME")) {
+            resume(false);
         }
     }
 
@@ -81,13 +86,52 @@ public class FileReceiver implements DataHandler {
         String[] parts = msg.split("::");
 
         this.currentFileSize = Long.parseLong(parts[2]);
+        this.fileName = parts[1];
         this.totalBytesReceived = 0;
 
-        File target = new File(dir + parts[1]);
-        this.fos = new FileOutputStream(target);
+        //parse the file name to search for fileName.part
+        long existingLen = checkForFile();
+
+
+        //file is already present with ext
+        if(existingLen == -1){
+            sendFileStart(fileName, existingLen);
+            return;
+        }
+        this.fos = new RandomAccessFile(dir + fileName + ".part", "rw");
         this.isReceivingFile = true;
 
-        write("Starting Transfer: " + parts[1]);
+        try{
+            fos.seek(existingLen);
+            totalBytesReceived = existingLen;
+        }catch (IOException e){
+            log.error(e.getMessage());
+        }
+        write("Starting Transfer: " + fileName);
+        sendFileStart(fileName, existingLen);
+    }
+
+    @SuppressWarnings("ResultOfMethodCallIgnored")
+    private long checkForFile(){
+        //check for both fileName and fileName.part
+        File target = new File(dir + fileName);
+        //means that the current file was already transferred
+        if(target.exists()) return -1;
+        
+        //check if the file alr exists?
+        target = new File(dir + fileName + ".part");
+        
+        //if the file doesn't exist, send the starting point as the length of the file
+        if(!target.exists())
+            return 0;
+
+        //if the existing file has a size > actual size
+        if(target.length() > currentFileSize){
+            target.delete();
+            return 0;
+        }
+        //divide the curr len into the chunk size and get the floor, then multiply it by chunk size to get the last incomplete chunk
+        return (Math.floorDiv(target.length(), (CHUNK_SIZE)) * (CHUNK_SIZE));
     }
 
     void getDir(){
@@ -118,11 +162,11 @@ public class FileReceiver implements DataHandler {
         String[] msgComponents = msg.split("::");
         //split the individual file
         String[] fileNames = msgComponents[1].split("\\|");
-        System.out.println();
+        System.out.println("\r");
         for(String fileName : fileNames){
             System.out.println(fileName);
         }
-        System.out.println();
+        System.out.println("\r");
         write("Total transfer size: " + msgComponents[2] + "KB");
 
         write("Accept Files?" + "\n" +
@@ -147,17 +191,19 @@ public class FileReceiver implements DataHandler {
             //get the directory first to save the files
             getDir();
             if(dir != null){
+                listener.setAppState(AppState.TRANSFERRING);
                 sendACK(true);
             }else{
                 //maybe write canceling request
                 write("Sending negative ACK");
+                listener.setAppState(AppState.CHATTING);
                 sendACK(false);
             }
         }
     }
 
     private void onComplete(){
-        listener.onFileTransferComplete();
+        listener.onFileTransferComplete(true);
     }
 
     private void write(String string){
@@ -168,6 +214,71 @@ public class FileReceiver implements DataHandler {
     public void onDir(boolean retry) {
         if(retry){
             getDir();
+        }
+    }
+
+    @SuppressWarnings("ResultOfMethodCallIgnored")
+    private void renameFile() {
+        //currently the file has ext .part
+        File target = new File(dir + fileName + ".part");
+        target.renameTo(new File(dir + fileName));
+    }
+
+    @Override
+    public void pause(boolean selfOriginated) {
+        if(isPaused) {
+            write("File transfer already paused.");
+            return;
+        }
+        try {
+            if (selfOriginated)
+                webRTC.send(ByteBuffer.wrap("FILE_PAUSE".getBytes()), false);
+        }
+        catch (Exception e){
+            log.error(e.getMessage());
+        }
+        finally {
+            if(!selfOriginated)
+                write("File transfer paused by other peer.");
+            selfOriginatedPause = selfOriginated;
+            isPaused = true;
+            listener.onPause(true);
+        }
+    }
+
+    @Override
+    public void resume(boolean selfOriginated) {
+        if(!isPaused){
+            write("File transfer not paused.");
+            return;
+        }
+        try {
+            if (selfOriginated && selfOriginatedPause) {
+                isPaused = false;
+                webRTC.send(ByteBuffer.wrap("FILE_RESUME".getBytes()), false);
+            }
+            else if (selfOriginated && !selfOriginatedPause)
+                write("Cannot resume file transfer, other peer paused it.");
+        }
+        catch (Exception e){
+            log.error(e.getMessage());
+        }
+        finally {
+            if (!selfOriginated) {
+                write("File transfer resumed by other peer.");
+                isPaused = false;
+                listener.onPause(false);
+            }
+        }
+    }
+
+    private void sendFileStart(String fileName, long startPos) {
+        String header = "FILE_START::" + fileName + "::" + startPos;
+        try {
+            webRTC.send(ByteBuffer.wrap(header.getBytes()), false);
+        }
+        catch (Exception e){
+            log.error(e.getMessage());
         }
     }
 }

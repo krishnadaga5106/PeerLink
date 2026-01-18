@@ -24,5 +24,6 @@ public enum AppState {
     //SENDER
     WAITING_FOR_ACK,
 
-    TRANSFERRING
+    TRANSFERRING,
+    TRANSFER_PAUSED
 }
