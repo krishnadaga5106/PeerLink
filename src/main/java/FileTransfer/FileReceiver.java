@@ -12,6 +12,7 @@ import org.lwjgl.util.tinyfd.TinyFileDialogs;
 
 import java.io.*;
 import java.nio.ByteBuffer;
+import java.util.concurrent.CountDownLatch;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -30,6 +31,10 @@ public class FileReceiver implements DataHandler, FileTransfer {
     private boolean isReceivingFile;
     private boolean isPaused = false;
     private boolean selfOriginatedPause;
+
+    private boolean userAccepted = false;
+    private boolean retry = false;
+    private CountDownLatch latch;
 
     @Override
     public void handleBin(RTCDataChannelBuffer buffer) {
@@ -71,8 +76,8 @@ public class FileReceiver implements DataHandler, FileTransfer {
             confirmFiles(msg);
             //then wait for the user ack, then proceed from the userAccept method
         }
-        else if(msg.equals("FILE_COMPLETE")){
-            onComplete();
+        else if(msg.startsWith("FILE_COMPLETE")){
+            onComplete(msg);
         }
         else if (msg.equals("FILE_PAUSE")) {
             pause(false);
@@ -147,11 +152,14 @@ public class FileReceiver implements DataHandler, FileTransfer {
 
             listener.onGettingDir();
             //wait for the main thread to notify about the input
-            try{
-                wait();
-            }catch (InterruptedException e){
+            latch = new CountDownLatch(1);
+            try {
+                latch.await();
+            }
+            catch (InterruptedException e){
                 log.error(e.getMessage());
             }
+            if (retry) getDir();
         }
     }
 
@@ -174,6 +182,35 @@ public class FileReceiver implements DataHandler, FileTransfer {
 
         //go to the controller now
         listener.onReviewing();
+
+        //set a new latch here
+        latch = new CountDownLatch(1);
+        try {
+            latch.await();
+        }
+        catch (InterruptedException e){
+            log.error(e.getMessage());
+        }
+
+        if(userAccepted){
+            //get the directory first to save the files
+            getDir();
+            if(dir != null){
+                listener.setAppState(AppState.TRANSFERRING);
+                sendACK(true);
+            }else{
+                //maybe write canceling request
+                write("Rejecting transfer request.");
+                listener.setAppState(AppState.CHATTING);
+                sendACK(false);
+            }
+        }
+        else {
+            //maybe write canceling request
+            write("Rejecting transfer request.");
+            listener.setAppState(AppState.CHATTING);
+            sendACK(false);
+        }
     }
 
     void sendACK(boolean positive){
@@ -187,23 +224,15 @@ public class FileReceiver implements DataHandler, FileTransfer {
     }
 
     public void userAccept(boolean positive){
-        if(positive){
-            //get the directory first to save the files
-            getDir();
-            if(dir != null){
-                listener.setAppState(AppState.TRANSFERRING);
-                sendACK(true);
-            }else{
-                //maybe write canceling request
-                write("Sending negative ACK");
-                listener.setAppState(AppState.CHATTING);
-                sendACK(false);
-            }
-        }
+        this.userAccepted = positive;
+        latch.countDown();
     }
 
-    private void onComplete(){
-        listener.onFileTransferComplete(true);
+    private void onComplete(String msg){
+        String[] parts = msg.split("::");
+        boolean success = parts[2].equals("TRUE");
+
+        listener.onFileTransferComplete(success);
     }
 
     private void write(String string){
@@ -212,9 +241,8 @@ public class FileReceiver implements DataHandler, FileTransfer {
     }
 
     public void onDir(boolean retry) {
-        if(retry){
-            getDir();
-        }
+        this.retry = retry;
+        this.latch.countDown();
     }
 
     @SuppressWarnings("ResultOfMethodCallIgnored")
@@ -257,7 +285,7 @@ public class FileReceiver implements DataHandler, FileTransfer {
                 isPaused = false;
                 webRTC.send(ByteBuffer.wrap("FILE_RESUME".getBytes()), false);
             }
-            else if (selfOriginated && !selfOriginatedPause)
+            else if (selfOriginated)
                 write("Cannot resume file transfer, other peer paused it.");
         }
         catch (Exception e){

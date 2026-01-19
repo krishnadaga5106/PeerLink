@@ -197,7 +197,6 @@ public class Controller implements EventListener, SystemHandler {
                 }
                 if(messageHandler.getDataHandler() instanceof FileReceiver receiver){
                     receiver.onDir(true);
-                    notify();
                 }
             }
             else if (line.equalsIgnoreCase("/cancel")){
@@ -206,8 +205,7 @@ public class Controller implements EventListener, SystemHandler {
                     continue;
                 }
                 if(messageHandler.getDataHandler() instanceof FileReceiver receiver){
-                     receiver.onDir(false);
-                    notify();
+                    receiver.onDir(false);
                 }
             }
 

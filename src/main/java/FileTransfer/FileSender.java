@@ -67,7 +67,7 @@ public class FileSender implements FileTransfer {
         latch.await();
 
         if(ackMsg.startsWith("NACK")){
-            write("Received Negative Acknowledgment");
+            write("Peer rejected the transfer request, exiting...");
             onComplete(false);
             return;
         }
@@ -167,7 +167,8 @@ public class FileSender implements FileTransfer {
     }
     
     private void onComplete(boolean successful) throws Exception {
-        webRTC.send(ByteBuffer.wrap("FILE_COMPLETE".getBytes()), false);
+        String msg = successful ? "FILE_COMPLETE::SUCCESS::TRUE" : "FILE_COMPLETE::SUCCESS::FALSE";
+        webRTC.send(ByteBuffer.wrap(msg.getBytes()), false);
         listener.onFileTransferComplete(successful);
     }
 
@@ -207,7 +208,7 @@ public class FileSender implements FileTransfer {
                 pauseLatch.countDown();
                 webRTC.send(ByteBuffer.wrap("FILE_RESUME".getBytes()), false);
             }
-            else if (selfOriginated && !selfOriginatedPause)
+            else if (selfOriginated)
                 write("Cannot resume file transfer, other peer paused it.");
         }
         catch (Exception e){
